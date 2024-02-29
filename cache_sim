@@ -1,0 +1,137 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+//structs
+typedef unsigned char uchar;
+
+//a single cache line (contains array of blocks)
+typedef struct cache_line_s {
+    uchar valid;    //validity bit
+    uchar frequency;
+    long int tag;
+    uchar* block;   //array of blocks in the line
+    } cache_line_t;
+
+//a single cache set (contains array of cache lines)
+typedef struct cache_s {
+    uchar s;
+    uchar t;
+    uchar b;
+    uchar E;
+    cache_line_t** cache;
+    } cache_t;
+
+//functions
+void print_cache(cache_t cache) {
+    int S = 1 << cache.s;
+    int B = 1 << cache.b;
+    for (int i = 0; i < S; i++) {
+        printf("Set %d\n", i);
+        for (int j = 0; j < cache.E; j++) {
+            printf("%1d %d 0x%0*lx ", cache.cache[i][j].valid,
+                     cache.cache[i][j].frequency, cache.t, cache.cache[i][j].tag);
+            for (int k = 0; k < B; k++) {
+                printf("%02x ", cache.cache[i][j].block[k]);
+                }
+            puts("");
+            }
+        }
+    }
+
+// S- 2^s is the number of sets in the cache
+// T- t is the tag length
+// B- 2^b is the number of blocks in every line
+// E- E is the number of lines per set
+cache_t initialize_cache(uchar s, uchar t, uchar b, uchar E) {
+    //creating the cache
+    int numSets = 1 << s;
+    int numBlocks = 1 << b;
+
+    //initialize the cache struct/
+    cache_t cache;
+    cache.s = s;
+    cache.t = t;
+    cache.b = b;
+    cache.E = E;
+
+    cache.cache = calloc(numSets, sizeof(cache_line_t*));    //create an array to hold 2^s sets (1<<s is 2^s)
+
+    //create 2^s cache sets
+    //cache_array[i] is a cache set and holds E lines
+    for (int i = 0; i < numSets; ++i) {
+        cache.cache[i] = calloc(E, sizeof(cache_line_t));
+
+        //set up cache lines with initial values
+        for (int j = 0; j < E; ++j) {
+            cache.cache[i][j].valid = 0;
+            cache.cache[i][j].tag = 0;
+            cache.cache[i][j].frequency = 0;
+            cache.cache[i][j].block = calloc(numBlocks, sizeof (uchar));
+        }
+    }
+    return cache;
+}
+
+// start is the zero address, start[off] holds the contents of what goes into
+//the cache.
+uchar read_byte(cache_t cache, uchar* start, long int off) {
+    int S = 1 << cache.s;
+    int B = 1 << cache.b;
+
+    // get the index of the set, the block start point, and tag
+    int set_index = (off >> cache.b) & ((1 << cache.s) - 1);
+    int block_start = off & (B - 1);
+    long int tag = off >> (cache.s + cache.b);
+
+    // check if the wanted byte exists in the cache
+    for (int i = 0; i < cache.E; ++i) {
+        if (cache.cache[set_index][i].valid && cache.cache[set_index][i].tag == tag) {
+            // Byte found in the cache, update frequency and return the value
+            cache.cache[set_index][i].frequency++;
+            return cache.cache[set_index][i].block[block_start];
+        }
+    }
+
+    // Cache miss, find the lowest frequency line to replace
+    int min_freq_index = 0;
+    for (int i = 1; i < cache.E; ++i) {
+        if (cache.cache[set_index][i].frequency < cache.cache[set_index][min_freq_index].frequency) {
+            min_freq_index = i;
+        }
+    }
+
+    // Replace the cache line with the new data
+    cache.cache[set_index][min_freq_index].valid = 1;
+    cache.cache[set_index][min_freq_index].frequency = 1;
+    cache.cache[set_index][min_freq_index].tag = tag;
+    for (int i = 0; i < B; ++i) {
+        cache.cache[set_index][min_freq_index].block[i] = start[off + i];
+    }
+
+    return cache.cache[set_index][min_freq_index].block[block_start];
+}
+
+void write_byte(cache_t cache, uchar* start, long int off, uchar new);
+
+// main function
+int main() {
+    int n;
+    printf("Size of data: ");
+    scanf("%d", &n);
+    uchar * mem = malloc(n);
+    printf("Input data >> ");
+    for (int i = 0; i < n; i++)
+        scanf("%hhd", mem + i);
+    int s, t, b, E;
+    printf("s t b E: ");
+    scanf("%d %d %d %d", &s, &t, &b, &E);
+    cache_t cache = initialize_cache(s, t, b, E);
+    while (1) {
+        scanf("%d", &n);
+        if (n < 0) break;
+        read_byte(cache, mem, n);
+        }
+    puts("");
+    print_cache(cache);
+    free(mem);
+    }
