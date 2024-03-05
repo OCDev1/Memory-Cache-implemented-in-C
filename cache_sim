@@ -111,7 +111,27 @@ uchar read_byte(cache_t cache, uchar* start, long int off) {
     return cache.cache[set_index][min_freq_index].block[block_start];
 }
 
-void write_byte(cache_t cache, uchar* start, long int off, uchar new);
+void write_byte(cache_t cache, uchar* start, long int off, uchar new){
+    int B = 1 << cache.b;
+
+    // Extract block offset
+    int block_offset = off & (B - 1);
+
+    // Write to the cache
+    uchar old_value = read_byte(cache, start, off);
+    int set_index = (off >> cache.b) & ((1 << cache.s) - 1);
+    long int tag = off >> (cache.s + cache.b);
+
+    for (int i = 0; i < cache.E; ++i) {
+        if (cache.cache[set_index][i].valid && cache.cache[set_index][i].tag == tag) {
+            // Update the value in the cache
+            cache.cache[set_index][i].block[block_offset] = new;
+        }
+    }
+
+    // Write to memory (write-through)
+    start[off] = new;
+}
 
 // main function
 int main() {
